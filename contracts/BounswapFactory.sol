@@ -15,21 +15,21 @@ contract BounswapFacotry is IBounswapFactory {
     address[] public allPairs;
     address[] public allTokens;
 
-    mapping (address pa => Pair) pairAddress;
-    mapping (address validator → address pairAddress[]) validatorPoolArr;
+    mapping (address pa => Pair) public pairInstance; // pair CA로 인스턴스 매핑
+    mapping (address validator => address[] pairAddress) public validatorPoolArr; // 공급자가 가지고 있는 모든 pair CA 배열
 
-    Struct TokenData {
-        tokenAddress,
-        name, // 이름
-        symbol, // 심볼
-        uri, // 이미지
-        // price, // 가격
-        // change, // 가격변동
-        tvl, // 총 예치량
-        volume // 총 거래량
+    struct TokenData {
+        address tokenAddress;
+        string name; // 이름
+        string symbol; // 심볼
+        string uri; // 이미지
+        uint tvl; // 총 예치량
+        uint volume; // 총 거래량
     }
 
-    Struct Data {
+    mapping (uint blockStamp => uint volume) volumePerTransaction;
+
+    struct Data {
         address token0Address; // token0 CA
         uint token0; // token0 총예치량
 
@@ -39,9 +39,11 @@ contract BounswapFacotry is IBounswapFactory {
         uint loToken; // 발행된 Lp token
     }
 
-    Struct allPoolData {
-        address, // 누가 이 풀의 지분을 가지고 있는지
-        Data
+    struct allPoolData {
+        address pair; // 누가 이 풀의 지분을 가지고 있는지
+        Data poolData;
+        uint tvl; // 해당 pool 의 총 예치량
+        uint volume;
     }
 
 
@@ -108,7 +110,7 @@ contract BounswapFacotry is IBounswapFactory {
 
         // 처음 생성하는 경우
         if(getPair[token0][token1] == address(0)) {
-            pair = createPairAddress(address tokenA, address tokenB)
+            pair = createPairAddress(tokenA, tokenB);
         }else {
             pair = getPair[token0][token1];
         }  
@@ -131,7 +133,7 @@ contract BounswapFacotry is IBounswapFactory {
 
 
     // 플랫폼 내 모든 토큰을 반환하는 함수
-    function getAllTokens() returns (TokenData[] memory) {
+    function getAllTokens(uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData[] memory) {
         for(uint i=0; i<allTokens.length; i++) {
             Token token = Token(allTokens[i]);
             arr[i] = TokenData(allTokens[i], token.name, token.symbol, token.uri,
@@ -143,16 +145,26 @@ contract BounswapFacotry is IBounswapFactory {
     // 빈 배열 생성(arr)
     // 전체 dash board 반환
     // function getAllPools() returns (address[], Data[]) {
-    function getAllPools() returns (allPoolData[]) {
+    function getAllPools(uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData[]) {
         for (uint i=0; i<allPairs.length; i++) {
-            arr[i] = allPoolData(allPairs[i], pairAddress[allPairs[i]].getAllData());
+            // 24H tvl 계산
+            // volume 계산
+
+            arr[i] = allPoolData(allPairs[i], pairAddress[allPairs[i]].getAllData(), tvl, volume);
             // arr[i] = pairAddress[allPairs[i]].getAllData();
         }
         // return (allPairs, arr);
         return arr;
     }
 
-    function getUserPools() returns (Data[]) {
+    // pool detail page에서 보여줄 정보
+    function getEachPool(address pa, uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData) {
+        // 24H tvl 계산
+        // volume 계산
+        return allPoolData(pa, pairAddress[pa].getAllData(), tvl, volume);
+    }
+
+    function getUserPools() public returns (Data[]) {
         address[] userPool = validatorPoolArr(msg.sender);
         for (uint i=0; i<userPool.length; i++) {
             arr[i] = pairAddress[validatorPoolArr[i]].getData(msg.sender);
@@ -160,7 +172,6 @@ contract BounswapFacotry is IBounswapFactory {
         }
         return arr;
     }
-
 
 
 
