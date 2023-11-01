@@ -97,7 +97,10 @@ contract BounswapFacotry is IBounswapFactory {
         emit PairCreated(token0, token1, pair, allPairs.length);
 
         // 새로 생긴 pair 주소로 LP token CA 생성
-        pairAddress[pair] = new Pair(pair);
+        // 1) BNC/ETH - NoJam, NJM
+        // 2) BNC/USDT - Steak, STK
+        // 3) BNC/BNB - ImGovernance, IMG → Bonus, BNS
+        pairAddress[pair] = new Pair("name", "symbol", 0, "uri");
 
         return pair;
     }
@@ -135,25 +138,24 @@ contract BounswapFacotry is IBounswapFactory {
     // 플랫폼 내 모든 토큰을 반환하는 함수
     function getAllTokens(uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData[] memory) {
         for(uint i=0; i<allTokens.length; i++) {
-            Token token = Token(allTokens[i]);
-            arr[i] = TokenData(allTokens[i], token.name, token.symbol, token.uri,
-            token.totalSupply, token.totalVolume);
+            arr[i] = getEachToken(allTokens[i]);
         }
         return arr;
     }
 
+    // 특정 토큰 정보 반환하는 함수
+    function getEachToken(address tokenAddress, uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData) {
+        Token token = Token(tokenAddress);
+        return TokenData(tokenAddress, token.name, token.symbol, token.uri,
+            token.totalSupply, token.totalVolume);
+    }
+
     // 빈 배열 생성(arr)
     // 전체 dash board 반환
-    // function getAllPools() returns (address[], Data[]) {
     function getAllPools(uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData[]) {
         for (uint i=0; i<allPairs.length; i++) {
-            // 24H tvl 계산
-            // volume 계산
-
-            arr[i] = allPoolData(allPairs[i], pairAddress[allPairs[i]].getAllData(), tvl, volume);
-            // arr[i] = pairAddress[allPairs[i]].getAllData();
+            arr[i] = getEachPool(allPairs[i], blockStampNow, blockStamp24hBefore);
         }
-        // return (allPairs, arr);
         return arr;
     }
 
@@ -168,7 +170,6 @@ contract BounswapFacotry is IBounswapFactory {
         address[] userPool = validatorPoolArr(msg.sender);
         for (uint i=0; i<userPool.length; i++) {
             arr[i] = pairAddress[validatorPoolArr[i]].getData(msg.sender);
-            // arr[i] = poolData[userPool[i]];
         }
         return arr;
     }
