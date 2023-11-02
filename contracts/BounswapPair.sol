@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./IBounswapPair.sol";
+import "./interfaces/IBounswapPair.sol";
+import "./interfaces/IBounswapERC20.sol";
+import "./interfaces/IBounswapFactory.sol";
+
 import "./BounswapERC20.sol";
+import "./Calculate.sol";
+
 import "./libraries/Math.sol";
 import "./libraries/UQ112x112.sol";
-import "./IBounswapERC20.sol";
-import "./IBounswapFactory.sol";
-
 import "./libraries/SafeMath.sol";
+
 
 contract BounswapPair is IBounswapPair, Token {
     // using SafeMath  for uint;
     using UQ112x112 for uint224;
+
+    Calculate public calculation;
 
     uint public constant MINIMUM_LIQUIDITY = 10**3;
     bytes4 private constant SELECTOR = bytes4(keccak256(bytes('transfer(address,uint256)')));
@@ -28,23 +33,6 @@ contract BounswapPair is IBounswapPair, Token {
     uint public price0CumulativeLast;
     uint public price1CumulativeLast;
     uint public kLast; // reserve0 * reserve1, as of immediately after the most recent liquidity event
-
-    // function allowance(address owner, address spender) external override  view returns (uint256);
-    // function approve(address spender, uint256 value) external override  returns (bool);
-    // function balanceOf(address account) external override  view returns (uint256);
-    //     function decimals() public override  view virtual returns (uint8) {
-    //     return 18;
-    // }
-
-    // function name() public view returns (string memory) {
-    //     return '';
-    // }
-    // function symbol() public view returns (string memory) {
-    //     return '';
-    // }
-    // function totalSupply() public view returns (uint) {
-    //     return 0;
-    // }
 
     uint private unlocked = 1;
     modifier lock() {
@@ -79,6 +67,11 @@ contract BounswapPair is IBounswapPair, Token {
         uint lpToken;
     }
 
+    mapping (uint blockStamp => uint volume) public volumePerTransaction0; // token0의 volume
+    mapping (uint blockStamp => uint volume) public volumePerTransaction1;
+
+
+
 
     function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
         _reserve0 = reserve0;
@@ -107,9 +100,9 @@ contract BounswapPair is IBounswapPair, Token {
     // uint112 private constant MAX_UINT112 = uint112(uint112(-1));
     uint112 private constant MAX_UINT112 = uint112((2**112) - 1);
 
-    constructor() Token("","",0,"") {
+    constructor(address _cal, string memory _name, string memory _symbol, uint _initialAmount, string memory _uri) Token(_name, _symbol, _initialAmount, _uri) {
         factory = msg.sender;
-
+        calculation = Calculate(_cal);
     }
 
     // called once by the factory at time of deployment
@@ -214,18 +207,34 @@ contract BounswapPair is IBounswapPair, Token {
         // uint _totalSupply = totalSupply; // 전체 lp
 
         uint userLiquidity = (liquidity * percentage) / 100; // 사용자가 원하는 비율로 소각
-        require(userLiquidity > 0, 'UniswapV2: INSUFFICIENT_LIQUIDITY_BURNED');
+        require(userLiquidity > 0, 'INSUFFICIENT_LIQUIDITY_BURNED');
 
-        // amount0 = userLiquidity.mul(balance0) / _totalSupply; 
+        // 사용자에게 돌려줄 토큰의 양
         amount0 = SafeMath.mul(userLiquidity, balance0) / _totalSupply; 
         amount1 = SafeMath.mul(userLiquidity, balance1) / _totalSupply; 
-        // amount1 = userLiquidity.mul(balance1) / _totalSupply; 
-        require(amount0 > 0 && amount1 > 0, 'UniswapV2: INSUFFICIENT_LIQUIDITY_BURNED');
+
+        require(amount0 > 0 && amount1 > 0, 'INSUFFICIENT_LIQUIDITY_BURNED');
         _burn(address(this), userLiquidity);
         _safeTransfer(_token0, to, amount0);
         _safeTransfer(_token1, to, amount1);
         balance0 = Token(_token0).balanceOf(address(this));
         balance1 = Token(_token1).balanceOf(address(this));
+
+        // 공급자의 pool data 수정
+        poolDataForValidator[msg.sender].token0Amount -= amount0;
+        poolDataForValidator[msg.sender].token1Amount -= amount1;
+        poolDataForValidator[msg.sender].lpToken -= userLiquidity;
+
+        // 만약 공급자가 모든 LpToken을 소각시켰으면 전체 공급자 배열에서 제외
+        if(poolDataForValidator[msg.sender].lpToken == 0) {   
+            for(uint i=0; i<validatorArr.length; i++) {
+                if(validatorArr[i] == msg.sender) {
+                    uint lastIndex = validatorArr.length - 1;
+                    validatorArr[i] = validatorArr[lastIndex];
+                    validatorArr.pop();
+                }
+            }
+        }
 
         _update(balance0, balance1, _reserve0, _reserve1);
         if (feeOn) kLast = SafeMath.mul(uint(reserve0), reserve1);
@@ -236,14 +245,12 @@ contract BounswapPair is IBounswapPair, Token {
     // input 넣었을 때 output 계산하는 함수
     function getOutputAmount(uint inputAmount, address inputToken) public view returns (uint outputAmount) {
         (uint inputReserve, uint outputReserve) = (inputToken == token0) ? (reserve0, reserve1) : (reserve1, reserve0);
-        uint outputAmountWithFee = (inputAmount * outputReserve) / (inputAmount + inputReserve);
-        return (outputAmountWithFee * 997) / 1000; // 0.3% 제외
+        return calculation.calOutputAmount(inputAmount, inputReserve, outputReserve);
     }
     // output 넣었을 때 input 계산하는 함수
     function getInputAmount(uint outputAmount, address outputToken) public view returns (uint inputAmount) {
         (uint inputReserve, uint outputReserve) = (outputToken == token0) ? (reserve1, reserve0) : (reserve0, reserve1);
-        uint inputAmountWithoutFee = (inputReserve * outputAmount) / (outputReserve - outputAmount);
-        return (inputAmountWithoutFee * 1000) / 997; // 3% 포함
+        return calculation.calInputAmount(outputAmount, inputReserve, outputReserve);
     }
 
     function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external lock {
@@ -291,17 +298,49 @@ contract BounswapPair is IBounswapPair, Token {
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
 
         // Volume 누적시키기
-        // Token(token0).totalVolume += amount0In;
-        // Token(token1).totalVolume += amount1In;
+        volumePerTransaction0[block.timestamp] = amount0In;
+        volumePerTransaction1[block.timestamp] = amount1In;
     }
 
     // pool detail page에서 사용자가 아직 미청구한 수수료
-    function getUnclaimedFee() public returns (uint) {
-        uint liquidity = balanceOf(address(this)); // pair 가 가지고 있는 Lp
-        uint userLiquidity = poolDataForValidator[msg.sender].lpToken;
+    function getUnclaimedFee() public returns (UnclaimedFeeData memory) {
+        return userlUnclaimedFees[msg.sender];
     }
 
-    // force balances to match reserves
+    // 미청구 수수료 청구하는 함수
+    function claimFee() public returns (bool) {
+        Token(token0).transfer(msg.sender, userlUnclaimedFees[msg.sender].token0Amount);
+        Token(token1).transfer(msg.sender, userlUnclaimedFees[msg.sender].token1Amount);
+        userlUnclaimedFees[msg.sender].token0Amount = 0;
+        userlUnclaimedFees[msg.sender].token1Amount = 0;
+        return true;
+    }
+
+
+    function getData(address validator) public view returns (Data memory) {
+        return poolDataForValidator[validator];
+    }
+
+    // totalVolume 계산
+    function getTotalVolume(address tokenAddress, uint blockStampNow, uint blockStamp24hBefore) public returns (uint) {
+        require(tokenAddress == token0 || tokenAddress == token1, "Invalid token address");
+        uint totalVolume = 0;
+
+        if (tokenAddress == token0) {
+            for (uint i = blockStamp24hBefore; i <= blockStampNow; i++) {
+                totalVolume += volumePerTransaction0[i];
+            }
+        } else {
+            for (uint i = blockStamp24hBefore; i <= blockStampNow; i++) {
+                totalVolume += volumePerTransaction1[i];
+            }
+        }
+
+        return totalVolume;
+    }
+
+
+
     function skim(address to) external lock {
         address _token0 = token0; // gas savings
         address _token1 = token1; // gas savings
@@ -309,19 +348,7 @@ contract BounswapPair is IBounswapPair, Token {
         _safeTransfer(_token1, to, SafeMath.sub(Token(_token1).balanceOf(address(this)), reserve1));
     }
 
-    // force reserves to match balances
     function sync() external lock {
         _update(Token(token0).balanceOf(address(this)), Token(token1).balanceOf(address(this)), reserve0, reserve1);
-    }
-
-
-    function getAllData() public returns (Data) {
-        // 총 예치량 (TVL), 총 거래량 (Volume) 이 반환
-        return (reserve, reserve);
-    }
-
-
-    function getData(address validator) public view returns (Data memory) {
-        return poolDataForValidator[validator];
     }
 }

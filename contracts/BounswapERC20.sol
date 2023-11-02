@@ -71,7 +71,4 @@ contract Token is ERC20 {
     function _baseURI() internal view returns (string memory) {
         return "https://crimson-generous-ant-395.mypinata.cloud/ipfs/";
     }
-
-    // totalVolume 값 수정
-    
 }

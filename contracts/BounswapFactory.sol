@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./IBounswapFactory.sol";
-import "./IBounswapPair.sol";
+import "./interfaces/IBounswapFactory.sol";
+import "./interfaces/IBounswapPair.sol";
 import "./BounswapPair.sol";
 import "./BounswapERC20.sol";
 import "./WBNC.sol";
@@ -15,7 +15,7 @@ contract BounswapFacotry is IBounswapFactory {
     address[] public allPairs;
     address[] public allTokens;
 
-    mapping (address pa => Pair) public pairInstance; // pair CA로 인스턴스 매핑
+    mapping (address pa => BounswapPair) public pairInstance; // pair CA로 인스턴스 매핑
     mapping (address validator => address[] pairAddress) public validatorPoolArr; // 공급자가 가지고 있는 모든 pair CA 배열
 
     struct TokenData {
@@ -100,7 +100,7 @@ contract BounswapFacotry is IBounswapFactory {
         // 1) BNC/ETH - NoJam, NJM
         // 2) BNC/USDT - Steak, STK
         // 3) BNC/BNB - ImGovernance, IMG → Bonus, BNS
-        pairAddress[pair] = new Pair("name", "symbol", 0, "uri");
+        pairAddress[pair] = new BounswapPair(calAddress, "name", "symbol", 0, "uri");
 
         return pair;
     }
@@ -146,8 +146,14 @@ contract BounswapFacotry is IBounswapFactory {
     // 특정 토큰 정보 반환하는 함수
     function getEachToken(address tokenAddress, uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData) {
         Token token = Token(tokenAddress);
+
+        // volume 계산
+        uint totalVolume = 0;
+        for(uint i=0; i<allPairs.length; i++) {
+            totalVolume += BounswapPair(allPairs[i]).getTotalVolume(tokenAddress, blockStampNow, blockStamp24hBefore);
+        } 
         return TokenData(tokenAddress, token.name, token.symbol, token.uri,
-            token.totalSupply, token.totalVolume);
+            token.totalSupply, totalVolume);
     }
 
     // 빈 배열 생성(arr)
