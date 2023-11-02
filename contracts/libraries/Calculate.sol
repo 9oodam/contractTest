@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract Calculate {
+library Calculate {
     // input 넣었을 때 output 계산하는 함수
     function calOutputAmount(uint inputAmount, uint inputReserve, uint outputReserve) public view returns (uint outputAmount) {
         uint outputAmountWithFee = (inputAmount * outputReserve) / (inputAmount + inputReserve);

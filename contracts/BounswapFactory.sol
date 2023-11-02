@@ -53,12 +53,12 @@ contract BounswapFacotry is IBounswapFactory {
         feeToSetter = _feeToSetter;
 
         // 토큰 4개 발행 (WBND, ETH, USDT, BNB)
-        WBNC bnc = new WBNC('Wrapped Bounce Coin', 'WBNC', 10000, "");
+        WBNC wbnc = new WBNC('Wrapped Bounce Coin', 'WBNC', 10000, "");
 		Token eth = new Token('ethereum', 'ETH', 10000, "");
 		Token usdt = new Token('Tether', 'USDT', 10000, "");
 		Token bnb = new Token ('Binance Coin', 'BNB', 10000, "");
 
-        allTokens.push(address(bnc));
+        allTokens.push(address(wbnc));
 		allTokens.push(address(eth));
 		allTokens.push(address(usdt));
 		allTokens.push(address(bnb));
@@ -100,7 +100,7 @@ contract BounswapFacotry is IBounswapFactory {
         // 1) BNC/ETH - NoJam, NJM
         // 2) BNC/USDT - Steak, STK
         // 3) BNC/BNB - ImGovernance, IMG → Bonus, BNS
-        pairAddress[pair] = new BounswapPair(calAddress, "name", "symbol", 0, "uri");
+        pairAddress[pair] = new BounswapPair("name", "symbol", 0, "uri");
 
         return pair;
     }

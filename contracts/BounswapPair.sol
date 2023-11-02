@@ -6,18 +6,17 @@ import "./interfaces/IBounswapERC20.sol";
 import "./interfaces/IBounswapFactory.sol";
 
 import "./BounswapERC20.sol";
-import "./Calculate.sol";
+import "./WBNC.sol";
 
+import "./libraries/Calculate.sol";
+import "./libraries/Hooks/sol";
 import "./libraries/Math.sol";
 import "./libraries/UQ112x112.sol";
 import "./libraries/SafeMath.sol";
 
 
 contract BounswapPair is IBounswapPair, Token {
-    // using SafeMath  for uint;
     using UQ112x112 for uint224;
-
-    Calculate public calculation;
 
     uint public constant MINIMUM_LIQUIDITY = 10**3;
     bytes4 private constant SELECTOR = bytes4(keccak256(bytes('transfer(address,uint256)')));
@@ -100,9 +99,8 @@ contract BounswapPair is IBounswapPair, Token {
     // uint112 private constant MAX_UINT112 = uint112(uint112(-1));
     uint112 private constant MAX_UINT112 = uint112((2**112) - 1);
 
-    constructor(address _cal, string memory _name, string memory _symbol, uint _initialAmount, string memory _uri) Token(_name, _symbol, _initialAmount, _uri) {
+    constructor( string memory _name, string memory _symbol, uint _initialAmount, string memory _uri) Token(_name, _symbol, _initialAmount, _uri) {
         factory = msg.sender;
-        calculation = Calculate(_cal);
     }
 
     // called once by the factory at time of deployment
@@ -245,26 +243,49 @@ contract BounswapPair is IBounswapPair, Token {
     // input 넣었을 때 output 계산하는 함수
     function getOutputAmount(uint inputAmount, address inputToken) public view returns (uint outputAmount) {
         (uint inputReserve, uint outputReserve) = (inputToken == token0) ? (reserve0, reserve1) : (reserve1, reserve0);
-        return calculation.calOutputAmount(inputAmount, inputReserve, outputReserve);
+        return Calculate.calOutputAmount(inputAmount, inputReserve, outputReserve);
     }
     // output 넣었을 때 input 계산하는 함수
     function getInputAmount(uint outputAmount, address outputToken) public view returns (uint inputAmount) {
         (uint inputReserve, uint outputReserve) = (outputToken == token0) ? (reserve1, reserve0) : (reserve0, reserve1);
-        return calculation.calInputAmount(outputAmount, inputReserve, outputReserve);
+        return Calculate.calInputAmount(outputAmount, inputReserve, outputReserve);
     }
 
-    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external lock {
-        require(amount0Out > 0 || amount1Out > 0, 'UniswapV2: INSUFFICIENT_OUTPUT_AMOUNT');
+    // input 값을 넣어서 ouput 값을 받고 싶을 때 == 받고 싶은 값이 0.5% 이하로 떨어지면 실행 안함
+    function beforeSwapInput(address tokenAddress, uint inputAmount, uint minToken) public returns (uint) {
+
+        (uint amount0Out, amount1Out) = tokenAddress == token0 ? (amount0Out = inputAmount, amount1Out = 0);
+
+
+
+        swap(amount0Out, amount1Out, msg.sender, minToken);
+    }
+
+    // output 값을 넣어서 input 값을 받고 싶을 때 == 지불하고 싶은 값이 0.5% 이상으로 올라가면 실행 안함
+    function beforeSwapOutput(uint outputAmount) public returns (uint) {
+
+        swap()
+    }
+
+    function swap(uint amount0Out, uint amount1Out, address to) external lock {
+        // output 이 둘 중에 하나는 0 보다 커야함
+        require(amount0Out > 0 || amount1Out > 0, 'INSUFFICIENT_OUTPUT_AMOUNT');
+
+        // BNC <-> WBNC
+        if(msg.value > 0) {
+            WBNC(factory.allTokens[0]).deposit(msg.value);
+        }
+
 
         (uint112 _reserve0, uint112 _reserve1,) = getReserves(); // gas savings
-        require(amount0Out < _reserve0 && amount1Out < _reserve1, 'UniswapV2: INSUFFICIENT_LIQUIDITY');
+        require(amount0Out < _reserve0 && amount1Out < _reserve1, 'INSUFFICIENT_LIQUIDITY');
 
         uint balance0;
         uint balance1;
         { // scope for _token{0,1}, avoids stack too deep errors
         address _token0 = token0;
         address _token1 = token1;
-        require(to != _token0 && to != _token1, 'UniswapV2: INVALID_TO');
+        require(to != _token0 && to != _token1, 'INVALID_TO');
         if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out); // optimistically transfer tokens
         if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out); // optimistically transfer tokens
         // if (data.length > 0) IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data);
@@ -273,7 +294,8 @@ contract BounswapPair is IBounswapPair, Token {
         }
         uint amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
         uint amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
-        require(amount0In > 0 || amount1In > 0, 'UniswapV2: INSUFFICIENT_INPUT_AMOUNT');
+        require(amount0In > 0 || amount1In > 0, 'INSUFFICIENT_INPUT_AMOUNT');
+
         { // scope for reserve{0,1}Adjusted, avoids stack too deep errors
         uint balance0Adjusted = SafeMath.sub(SafeMath.mul(balance0, 1000), SafeMath.mul(amount0In, 3));
         uint balance1Adjusted = SafeMath.sub(SafeMath.mul(balance1, 1000), SafeMath.mul(amount1In, 3));
@@ -299,7 +321,9 @@ contract BounswapPair is IBounswapPair, Token {
 
         // Volume 누적시키기
         volumePerTransaction0[block.timestamp] = amount0In;
+        volumePerTransaction0[block.timestamp] += amount0Out;
         volumePerTransaction1[block.timestamp] = amount1In;
+        volumePerTransaction1[block.timestamp] += amount1Out;
     }
 
     // pool detail page에서 사용자가 아직 미청구한 수수료
