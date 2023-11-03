@@ -4,15 +4,19 @@ pragma solidity ^0.8.20;
 import "./BounswapERC20.sol";
 
 
-contract WBNC is Token(_name, _symbol, _amount, _uri) {
+contract WBNC is Token {
     event Deposit(address indexed from, uint256 amount);
 
     event Withdrawal(address indexed to, uint256 amount);
 
+    constructor(string memory _name, string memory _symbol, uint _amount, string memory _uri) Token(_name, _symbol, _amount, _uri) {
+
+    }
+
     function deposit(uint value) public virtual {
         _mint(msg.sender, value);
 
-        emit Deposit(msg.sender, msg.value);
+        emit Deposit(msg.sender, value);
     }
 
     function withdraw(uint256 amount) public virtual {
@@ -21,10 +25,10 @@ contract WBNC is Token(_name, _symbol, _amount, _uri) {
         emit Withdrawal(msg.sender, amount);
     }
 
-    receive() external payable virtual {
-        min/max Token()
+    // receive() external payable virtual {
+//        min/max Token()
 
-    }
+    //}
 }
 
 // front swap 버튼 누름

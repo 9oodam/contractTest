@@ -6,10 +6,11 @@ import "./interfaces/IBounswapERC20.sol";
 import "./interfaces/IBounswapFactory.sol";
 
 import "./BounswapERC20.sol";
+import "./BounswapFactory.sol"; // 확인 필요
 import "./WBNC.sol";
 
 import "./libraries/Calculate.sol";
-import "./libraries/Hooks/sol";
+import "./libraries/Hooks.sol";
 import "./libraries/Math.sol";
 import "./libraries/UQ112x112.sol";
 import "./libraries/SafeMath.sol";
@@ -20,6 +21,8 @@ contract BounswapPair is IBounswapPair, Token {
 
     uint public constant MINIMUM_LIQUIDITY = 10**3;
     bytes4 private constant SELECTOR = bytes4(keccak256(bytes('transfer(address,uint256)')));
+
+    WBNC public wbnc; // 확인 필요
 
     address public factory;
     address public token0;
@@ -101,6 +104,7 @@ contract BounswapPair is IBounswapPair, Token {
 
     constructor( string memory _name, string memory _symbol, uint _initialAmount, string memory _uri) Token(_name, _symbol, _initialAmount, _uri) {
         factory = msg.sender;
+        wbnc = WBNC(BounswapFacotry(factory).getAllTokenAddress()[0]);
     }
 
     // called once by the factory at time of deployment
@@ -254,26 +258,27 @@ contract BounswapPair is IBounswapPair, Token {
     // input 값을 넣어서 ouput 값을 받고 싶을 때 == 받고 싶은 값이 0.5% 이하로 떨어지면 실행 안함
     function beforeSwapInput(address tokenAddress, uint inputAmount, uint minToken) public returns (uint) {
 
-        (uint amount0Out, amount1Out) = tokenAddress == token0 ? (amount0Out = inputAmount, amount1Out = 0);
+        // (uint amount0Out, amount1Out) = tokenAddress == token0 ? (amount0Out = inputAmount, amount1Out = 0);
 
 
-
-        swap(amount0Out, amount1Out, msg.sender, minToken);
+        // swap(amount0Out, amount1Out, msg.sender, minToken);
     }
 
     // output 값을 넣어서 input 값을 받고 싶을 때 == 지불하고 싶은 값이 0.5% 이상으로 올라가면 실행 안함
     function beforeSwapOutput(uint outputAmount) public returns (uint) {
 
-        swap()
+        // swap()
     }
 
-    function swap(uint amount0Out, uint amount1Out, address to) external lock {
+    function swap(uint amount0Out, uint amount1Out, address to) external payable lock {
         // output 이 둘 중에 하나는 0 보다 커야함
         require(amount0Out > 0 || amount1Out > 0, 'INSUFFICIENT_OUTPUT_AMOUNT');
 
         // BNC <-> WBNC
         if(msg.value > 0) {
-            WBNC(factory.allTokens[0]).deposit(msg.value);
+            // WBNC(IBounswapFactory(factory).allTokens[0]).deposit(msg.value);
+            // WBNC(BounswapFacotry(factory).allTokens[0]).deposit(msg.value);
+            WBNC(BounswapFacotry(factory).getAllTokenAddress()[0]).deposit(msg.value);
         }
 
 

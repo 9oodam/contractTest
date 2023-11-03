@@ -6,6 +6,9 @@ interface IBounswapERC20 {
 
     function name() external pure returns (string memory);
     function symbol() external pure returns (string memory);
+
+    function uri() external pure returns (string memory); // 확인 필요
+
     function decimals() external pure returns (uint8);
     function totalSupply() external view returns (uint);
     function balanceOf(address owner) external view returns (uint);

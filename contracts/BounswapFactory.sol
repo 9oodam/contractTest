@@ -12,10 +12,12 @@ contract BounswapFacotry is IBounswapFactory {
     address public feeToSetter;
 
     mapping(address => mapping(address => address)) public getPair;
-    address[] public allPairs;
+    // address[] public allPairs;
+    address[] public override allPairs;
     address[] public allTokens;
 
-    mapping (address pa => BounswapPair) public pairInstance; // pair CA로 인스턴스 매핑
+    // mapping (address pa => BounswapPair) public pairInstance; // pair CA로 인스턴스 매핑
+    mapping (address pa => BounswapPair) public pairAddress; // 이미 pairAddress 변수를 사용하고 있는 구문이 많아서 다시 수정함 // 확인 필요
     mapping (address validator => address[] pairAddress) public validatorPoolArr; // 공급자가 가지고 있는 모든 pair CA 배열
 
     struct TokenData {
@@ -29,6 +31,7 @@ contract BounswapFacotry is IBounswapFactory {
 
     mapping (uint blockStamp => uint volume) volumePerTransaction;
 
+    // 확인 필요
     struct Data {
         address token0Address; // token0 CA
         uint token0; // token0 총예치량
@@ -36,8 +39,9 @@ contract BounswapFacotry is IBounswapFactory {
         address token1Address;
         uint token1;
 
-        uint loToken; // 발행된 Lp token
+        uint lpToken; // 발행된 Lp token
     }
+
 
     struct allPoolData {
         address pair; // 누가 이 풀의 지분을 가지고 있는지
@@ -47,7 +51,7 @@ contract BounswapFacotry is IBounswapFactory {
     }
 
 
-    event PairCreated(address indexed token0, address indexed token1, address pair, uint);
+    // event PairCreated(address indexed token0, address indexed token1, address pair, uint);
 
     constructor(address _feeToSetter) public {
         feeToSetter = _feeToSetter;
@@ -69,7 +73,7 @@ contract BounswapFacotry is IBounswapFactory {
         return allPairs.length;
     }
 
-    function getAllTokenAddress() public view returns (address[]) {
+    function getAllTokenAddress() public view returns (address[] memory) {
         return allTokens;
     }
 
@@ -78,9 +82,10 @@ contract BounswapFacotry is IBounswapFactory {
         return getPair[tokenA][tokenB];
     }
 
-
     // pair 처음 생성할 때 실행
-    function createPairAddress(address tokenA, address tokenB) internal returns (address pair) {
+    // function createPairAddress(address tokenA, address tokenB) internal returns (address pair) {
+    function createPairAddress(address token0, address token1) internal returns (address pair) {
+
         bytes memory bytecode = type(BounswapPair).creationCode;
         bytes32 salt = keccak256(abi.encodePacked(token0, token1));
         assembly {
@@ -113,7 +118,8 @@ contract BounswapFacotry is IBounswapFactory {
 
         // 처음 생성하는 경우
         if(getPair[token0][token1] == address(0)) {
-            pair = createPairAddress(tokenA, tokenB);
+            // pair = createPairAddress(tokenA, tokenB);
+            pair = createPairAddress(token0, token1);
         }else {
             pair = getPair[token0][token1];
         }  
@@ -127,7 +133,7 @@ contract BounswapFacotry is IBounswapFactory {
                 break;
             }
         }
-        require(isDupulicated == false);
+        require(isDuplicated == false);
         validatorPoolArr[msg.sender].push(pair);
 
         pairAddress[pair].mint(msg.sender);
@@ -137,14 +143,15 @@ contract BounswapFacotry is IBounswapFactory {
 
     // 플랫폼 내 모든 토큰을 반환하는 함수
     function getAllTokens(uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData[] memory) {
+        TokenData[] memory arr = new TokenData[](allTokens.length);
         for(uint i=0; i<allTokens.length; i++) {
-            arr[i] = getEachToken(allTokens[i]);
+            arr[i] = getEachToken(allTokens[i], blockStampNow, blockStamp24hBefore);
         }
         return arr;
     }
 
     // 특정 토큰 정보 반환하는 함수
-    function getEachToken(address tokenAddress, uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData) {
+    function getEachToken(address tokenAddress, uint blockStampNow, uint blockStamp24hBefore) public returns (TokenData memory) {
         Token token = Token(tokenAddress);
 
         // volume 계산
@@ -152,13 +159,13 @@ contract BounswapFacotry is IBounswapFactory {
         for(uint i=0; i<allPairs.length; i++) {
             totalVolume += BounswapPair(allPairs[i]).getTotalVolume(tokenAddress, blockStampNow, blockStamp24hBefore);
         } 
-        return TokenData(tokenAddress, token.name, token.symbol, token.uri,
-            token.totalSupply, totalVolume);
+        return TokenData(tokenAddress, token.name(), token.symbol(), token.uri(), token.totalSupply(), totalVolume);
     }
 
     // 빈 배열 생성(arr)
     // 전체 dash board 반환
-    function getAllPools(uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData[]) {
+    function getAllPools(uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData[] memory) {
+        allPoolData[] memory arr = new allPoolData[](allTokens.length);
         for (uint i=0; i<allPairs.length; i++) {
             arr[i] = getEachPool(allPairs[i], blockStampNow, blockStamp24hBefore);
         }
@@ -166,16 +173,18 @@ contract BounswapFacotry is IBounswapFactory {
     }
 
     // pool detail page에서 보여줄 정보
-    function getEachPool(address pa, uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData) {
+    function getEachPool(address pa, uint blockStampNow, uint blockStamp24hBefore) public returns (allPoolData memory) {
         // 24H tvl 계산
         // volume 계산
-        return allPoolData(pa, pairAddress[pa].getAllData(), tvl, volume);
+        // return allPoolData(pa, pairAddress[pa].getAllData(), tvl, volume);
     }
 
-    function getUserPools() public returns (Data[]) {
-        address[] userPool = validatorPoolArr(msg.sender);
+    function getUserPools() public returns (BounswapPair.Data[] memory) {
+        address[] memory userPool = validatorPoolArr[msg.sender];
+        BounswapPair.Data[] memory arr = new BounswapPair.Data[](allTokens.length);
         for (uint i=0; i<userPool.length; i++) {
-            arr[i] = pairAddress[validatorPoolArr[i]].getData(msg.sender);
+            // arr[i] = pairAddress[validatorPoolArr[i]].getData(msg.sender);
+            arr[i] = pairAddress[userPool[i]].getData(msg.sender);
         }
         return arr;
     }
